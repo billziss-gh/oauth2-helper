@@ -4,10 +4,9 @@
  * @copyright 2018 Bill Zissimopoulos
  */
 
-#include <stdarg.h>
-
 #if defined(_WIN64) || defined(_WIN32)
 #include <windows.h>
+#define exit(n)                         ExitProcess(n)
 #define strcpy(d, s)                    lstrcpyA(d, s)
 #define strlen(s)                       lstrlenA(s)
 #define malloc(s)                       HeapAlloc(GetProcessHeap(), 0, s)
@@ -30,6 +29,8 @@ unsigned long __stdcall GetLastError(void);
 #elif defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #elif defined(__linux__)
 #include <errno.h>
 #include <fcntl.h>
@@ -43,13 +44,6 @@ extern char **environ;
 #error Unknown platform
 #endif
 
-enum
-{
-    E_BROWSER                           = 'B',
-    E_NETWORK                           = 'N',
-    E_TIMEOUT                           = 'T',
-};
-
 #if defined(_WIN64) || defined(_WIN32)
 int write(intptr_t fd, const void *buf, size_t len)
 {
@@ -57,6 +51,47 @@ int write(intptr_t fd, const void *buf, size_t len)
     return WriteFile((HANDLE)fd, buf, len, &BytesTransferred, 0) ? BytesTransferred : -1;
 }
 #endif
+
+#if defined(_WIN64) || defined(_WIN32)
+static inline int socket_close(SOCKET s)
+{
+    return closesocket(s);
+}
+static inline int socket_nonblock(SOCKET s)
+{
+    u_long arg = 1;
+    return ioctlsocket(s, FIONBIO, &arg);
+}
+static inline int socket_errno()
+{
+    return WSAGetLastError();
+}
+#else
+typedef int SOCKET;
+#define INVALID_SOCKET                  (-1)
+#define SOCKET_ERROR                    (-1)
+static inline int socket_close(SOCKET s)
+{
+    return close(s);
+}
+static inline int socket_nonblock(SOCKET s)
+{
+    int flags = fcntl(s, F_GETFL);
+    return fcntl(s, F_SETFL, flags | O_NONBLOCK);
+}
+static inline int socket_errno()
+{
+    return errno;
+}
+#endif
+
+enum
+{
+    E_BROWSER                           = 'B',
+    E_SERVER                            = 'S',
+    E_NETWORK                           = 'N',
+    E_TIMEOUT                           = 'T',
+};
 
 void err(int result, const char *fmt, ...)
 {
@@ -68,6 +103,9 @@ void err(int result, const char *fmt, ...)
     {
     case E_BROWSER:
         strcpy(buf, "E_BROWSER: ");
+        break;
+    case E_SERVER:
+        strcpy(buf, "E_SERVER: ");
         break;
     case E_NETWORK:
         strcpy(buf, "E_NETWORK: ");
@@ -179,10 +217,128 @@ exit:
     return result;
 }
 
+int server_socket(int port, SOCKET *psocket, int *pport)
+{
+    int result = E_SERVER;
+    SOCKET s = INVALID_SOCKET;
+    struct sockaddr_in addr;
+    socklen_t len;
+    int status;
+
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    if (INVALID_SOCKET == s)
+    {
+        err(result, "socket: %d\n", socket_errno());
+        goto fail;
+    }
+
+    status = socket_nonblock(s);
+    if (SOCKET_ERROR == status)
+    {
+        err(result, "socket_nonblock: %d\n", socket_errno());
+        goto fail;
+    }
+
+    memset(&addr, 0, sizeof addr);
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(port);
+
+    status = bind(s, (struct sockaddr *)&addr, sizeof addr);
+    if (SOCKET_ERROR == status)
+    {
+        err(result, "bind: %d\n", socket_errno());
+        goto fail;
+    }
+
+    status = listen(s, 1);
+    if (SOCKET_ERROR == status)
+    {
+        err(result, "listen: %d\n", socket_errno());
+        goto fail;
+    }
+
+    len = sizeof addr;
+    status = getsockname(s, (struct sockaddr *)&addr, &len);
+    if (SOCKET_ERROR == status)
+    {
+        err(result, "getsockname: %d\n", socket_errno());
+        goto fail;
+    }
+
+    result = 0;
+
+    *psocket = s;
+    *pport = ntohs(addr.sin_port);
+    return result;
+
+fail:
+    if (INVALID_SOCKET != s)
+        socket_close(s);
+
+    *psocket = INVALID_SOCKET;
+    *pport = 0;
+    return result;
+}
+
+void write_result(int result)
+{
+    char buf[3];
+
+    if (0 == result)
+    {
+        buf[0] = '+';
+        buf[1] = '\n';
+        write(STDOUT_FILENO, buf, 2);
+    }
+    else
+    {
+        buf[0] = '-';
+        buf[1] = result;
+        buf[2] = '\n';
+        write(STDOUT_FILENO, buf, 3);
+    }
+}
+
+void usage(void)
+{
+    char usage[] = "usage: oauth2-helper http-url\n";
+
+    write(STDERR_FILENO, usage, strlen(usage));
+    exit(2);
+}
+
 int main(int argc, char *argv[])
 {
-    browser(argv[1]);
+    char *url;
+    SOCKET s;
+    int port;
+    int result;
+
+    if (2 > argc)
+        usage();
+
+    url = argv[1];
+    if (!('h' == url[0] && 't' == url[1] && 't' == url[2] && 'p' == url[3] &&
+        (':' == url[4] || ('s' == url[4] && ':' == url[5]))))
+        usage();
+
+    result = server_socket(0, &s, &port);
+    if (0 != result)
+        goto fail;
+
+    result = browser(url);
+    if (0 != result)
+        goto fail;
+
+    write_result(result);
+
     return 0;
+
+fail:
+    write_result(result);
+
+    return 1;
 }
 
 #if defined(_WIN64) || defined(_WIN32)
