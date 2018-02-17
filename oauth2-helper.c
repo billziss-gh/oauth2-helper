@@ -93,6 +93,25 @@ enum
     E_TIMEOUT                           = 'T',
 };
 
+void write_result(int result)
+{
+    char buf[3];
+
+    if (0 == result)
+    {
+        buf[0] = '+';
+        buf[1] = '\n';
+        write(STDOUT_FILENO, buf, 2);
+    }
+    else
+    {
+        buf[0] = '-';
+        buf[1] = result;
+        buf[2] = '\n';
+        write(STDOUT_FILENO, buf, 3);
+    }
+}
+
 void err(int result, const char *fmt, ...)
 {
     va_list ap;
@@ -279,25 +298,6 @@ fail:
     *psocket = INVALID_SOCKET;
     *pport = 0;
     return result;
-}
-
-void write_result(int result)
-{
-    char buf[3];
-
-    if (0 == result)
-    {
-        buf[0] = '+';
-        buf[1] = '\n';
-        write(STDOUT_FILENO, buf, 2);
-    }
-    else
-    {
-        buf[0] = '-';
-        buf[1] = result;
-        buf[2] = '\n';
-        write(STDOUT_FILENO, buf, 3);
-    }
 }
 
 static unsigned strtouint(const char *p)
