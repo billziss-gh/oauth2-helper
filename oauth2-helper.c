@@ -319,8 +319,7 @@ static unsigned strtouint(const char *p)
 
 void usage(void)
 {
-    char usage[] = "usage: oauth2-helper http-url [listen-port]\n";
-
+    char usage[] = "usage: oauth2-helper [-pPORT] URL\n";
     write(STDERR_FILENO, usage, strlen(usage));
     exit(2);
 }
@@ -328,20 +327,32 @@ void usage(void)
 int main(int argc, char *argv[])
 {
     char *urlarg, url[1024];
-    SOCKET s;
+    int argi;
     int port = 0;
+    SOCKET s;
     int result;
 
-    if (2 > argc)
+    for (argi = 1; argc > argi; argi++)
+    {
+        if ('-' != argv[argi][0])
+            break;
+        switch (argv[argi][1])
+        {
+        case 'p':
+            port = strtouint(argv[argi] + 2);
+            break;
+        default:
+            usage();
+            break;
+        }
+    }
+    if (1 != argc - argi)
         usage();
 
-    urlarg = argv[1];
+    urlarg = argv[argi];
     if (!('h' == urlarg[0] && 't' == urlarg[1] && 't' == urlarg[2] && 'p' == urlarg[3] &&
         (':' == urlarg[4] || ('s' == urlarg[4] && ':' == urlarg[5]))))
         usage();
-
-    if (3 <= argc)
-        port = strtouint(argv[2]);
 
     result = server_socket(port, &s, &port);
     if (0 != result)
