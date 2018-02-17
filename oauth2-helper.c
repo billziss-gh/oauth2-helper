@@ -121,7 +121,7 @@ void err(int result, const char *fmt, ...)
 
     va_start(ap, fmt);
 #if defined(_WIN64) || defined(_WIN32)
-    wvsprintf(buf + len, fmt, ap);
+    wvsprintfA(buf + len, fmt, ap);
 #else
     vsnprintf(buf + len, sizeof buf - len, fmt, ap);
 #endif
@@ -300,9 +300,26 @@ void write_result(int result)
     }
 }
 
+static unsigned strtouint(const char *p)
+{
+    unsigned v;
+
+    for (v = 0; *p; p++)
+    {
+        int c = *p;
+
+        if ('0' <= c && c <= '9')
+            v = 10 * v + (c - '0');
+        else
+            break;
+    }
+
+    return v;
+}
+
 void usage(void)
 {
-    char usage[] = "usage: oauth2-helper http-url\n";
+    char usage[] = "usage: oauth2-helper http-url [listen-port]\n";
 
     write(STDERR_FILENO, usage, strlen(usage));
     exit(2);
@@ -310,22 +327,44 @@ void usage(void)
 
 int main(int argc, char *argv[])
 {
-    char *url;
+    char *urlarg, url[1024];
     SOCKET s;
-    int port;
+    int port = 0;
     int result;
 
     if (2 > argc)
         usage();
 
-    url = argv[1];
-    if (!('h' == url[0] && 't' == url[1] && 't' == url[2] && 'p' == url[3] &&
-        (':' == url[4] || ('s' == url[4] && ':' == url[5]))))
+    urlarg = argv[1];
+    if (!('h' == urlarg[0] && 't' == urlarg[1] && 't' == urlarg[2] && 'p' == urlarg[3] &&
+        (':' == urlarg[4] || ('s' == urlarg[4] && ':' == urlarg[5]))))
         usage();
 
-    result = server_socket(0, &s, &port);
+    if (3 <= argc)
+        port = strtouint(argv[2]);
+
+    result = server_socket(port, &s, &port);
     if (0 != result)
         goto fail;
+
+    for (char *p = urlarg; *p; p++)
+        if ('%' == *p)
+            *p = '\x01';
+        else if ('<' == p[0] && '>' == p[1])
+        {
+            p[0] = '%';
+            p[1] = 'd';
+        }
+
+#if defined(_WIN64) || defined(_WIN32)
+    wsprintfA(url, urlarg, port);
+#else
+    snprintf(url, sizeof url, urlarg, port);
+#endif
+
+    for (char *p = url; *p; p++)
+        if ('\x01' == *p)
+            *p = '%';
 
     result = browser(url);
     if (0 != result)
