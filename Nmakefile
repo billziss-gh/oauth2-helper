@@ -1,0 +1,3 @@
+oauth2-helper.exe: oauth2-helper.c
+	cl /W2 /MT /GS- oauth2-helper.c kernel32.lib user32.lib shell32.lib /link /nodefaultlib
+	del *.obj
