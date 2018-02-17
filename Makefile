@@ -9,9 +9,7 @@ else
 	Platform=$(shell uname -s)
 endif
 
-ifeq ($(Platform),Cygwin)
 CFLAGS=
-endif
 ifeq ($(Platform),Darwin)
 CFLAGS=-framework CoreFoundation -framework CoreServices
 endif

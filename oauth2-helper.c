@@ -31,6 +31,14 @@ unsigned long __stdcall GetLastError(void);
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
 #elif defined(__linux__)
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
 #else
 #error Unknown platform
 #endif
@@ -124,6 +132,49 @@ exit:
     if (0 != urlstr)
         CFRelease(urlstr);
 #elif defined(__linux__)
+	char *argv[] =
+	{
+		"xdg-open",
+        (char *)url,
+		0,
+	};
+    posix_spawn_file_actions_t file_actions_stg, *file_actions = 0;
+	pid_t pid;
+	int status;
+    status = posix_spawn_file_actions_init(&file_actions_stg);
+    if (0 != status)
+    {
+        err(result, "posix_spawn_file_actions_init: %d\n", status);
+        goto exit;
+    }
+    file_actions = &file_actions_stg;
+    status = posix_spawn_file_actions_addopen(
+        file_actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    if (0 != status)
+    {
+        err(result, "posix_spawn_file_actions_addopen: %d\n", status);
+        goto exit;
+    }
+    status = posix_spawnp(&pid, argv[0], file_actions, 0, argv, environ);
+    if (0 != status)
+    {
+        err(result, "posix_spawnp: %d\n", status);
+        goto exit;
+    }
+    if (pid != waitpid(pid, &status, 0))
+    {
+        err(result, "waitpid: %d\n", errno);
+        goto exit;
+    }
+    if (!WIFEXITED(status) || 0 != WEXITSTATUS(status))
+    {
+        err(result, "xdg-open: %d\n", status);
+        goto exit;
+    }
+    result = 0;
+exit:
+    if (0 != file_actions)
+        posix_spawn_file_actions_destroy(file_actions);
 #endif
     return result;
 }
