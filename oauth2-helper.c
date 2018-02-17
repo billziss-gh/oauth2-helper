@@ -15,6 +15,18 @@
 #define STDOUT_FILENO                   (intptr_t)GetStdHandle(STD_OUTPUT_HANDLE)
 #define STDERR_FILENO                   (intptr_t)GetStdHandle(STD_ERROR_HANDLE)
 #elif defined(__CYGWIN__)
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+void *__stdcall ShellExecuteA(
+    void *hwnd,
+    const char *lpOperation,
+    const char *lpFile,
+    const char *lpParameters,
+    const char *lpDirectory,
+    int nShowCmd);
+unsigned long __stdcall GetLastError(void);
+#define SW_SHOWNORMAL                   1
 #elif defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
@@ -75,7 +87,7 @@ void err(int result, const char *fmt, ...)
 int browser(const char *url)
 {
     int result = E_BROWSER;
-#if defined(_WIN64) || defined(_WIN32)
+#if defined(_WIN64) || defined(_WIN32) || defined(__CYGWIN__)
     if (!ShellExecuteA(0, "open", url, 0, 0, SW_SHOWNORMAL))
     {
         err(result, "ShellExecuteA: %d\n", GetLastError());
@@ -83,7 +95,6 @@ int browser(const char *url)
     }
     result = 0;
 exit:
-#elif defined(__CYGWIN__)
 #elif defined(__APPLE__)
     CFStringRef urlstr = 0;
     CFURLRef urlref = 0;
