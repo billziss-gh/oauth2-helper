@@ -114,6 +114,25 @@ enum
     E_TIMEOUT                           = 'T',
 };
 
+#define rsp200\
+    "HTTP/1.1 200 OK\r\n"\
+    "Content-type: text/html\r\n"\
+    "\r\n"\
+    "<html>"\
+    "<body>"\
+    "<h1>You are authorized</h1>"\
+    "</body>"\
+    "</html>"
+#define rsp404\
+    "HTTP/1.1 404 Not Found\r\n"\
+    "Content-type: text/html\r\n"\
+    "\r\n"\
+    "<html>"\
+    "<body>"\
+    "<h1>404 Not Found</h1>"\
+    "</body>"\
+    "</html>"
+
 void write_result(int result)
 {
     char buf[3];
@@ -327,13 +346,15 @@ int server(SOCKET s, unsigned timeout)
     SOCKET a = INVALID_SOCKET;
     struct timeval tv;
     fd_set fds;
-    int status;
+    int status, n;
+    char req[2048 + 1], *rsp;
+    char *resource = 0, *p;
 
     tv.tv_sec = timeout ? timeout : 120;
     tv.tv_usec = 0;
     FD_ZERO(&fds);
     FD_SET(s, &fds);
-    status = select(1, &fds, 0, 0, &tv);
+    status = select(s + 1, &fds, 0, 0, &tv);
     if (SOCKET_ERROR == status)
     {
         err(result = E_SERVER, "select: %d\n", socket_errno());
@@ -352,7 +373,33 @@ int server(SOCKET s, unsigned timeout)
         goto exit;
     }
 
-    /* read/write */
+    n = recv(a, req, sizeof req - 1, 0);
+    if (SOCKET_ERROR == n)
+    {
+        err(result = E_NETWORK, "recv: %d\n", socket_errno());
+        goto exit;
+    }
+    req[n] = '\0';
+
+    if ('G' == req[0] && 'E' == req[1] && 'T' == req[2] && req[3] == ' ')
+    {
+        resource = req + 4;
+        for (p = resource; *p && ' ' != *p && '\r' != *p && '\n' != *p; p++)
+            ;
+    }
+
+    rsp = resource ? rsp200 : rsp404;
+    send(a, rsp, strlen(rsp), 0);
+
+    if (0 == resource)
+    {
+        err(result = E_NETWORK, "HTTP: no resource\n");
+        goto exit;
+    }
+
+    write_result(0);
+    write(STDOUT_FILENO, resource, p - resource);
+    write(STDOUT_FILENO, "\n", 1);
 
     result = 0;
 
@@ -427,7 +474,7 @@ int main(int argc, char *argv[])
     for (char *p = urlarg; *p; p++)
         if ('%' == *p)
             *p = '\x01';
-        else if ('<' == p[0] && '>' == p[1])
+        else if ('[' == p[0] && ']' == p[1])
         {
             p[0] = '%';
             p[1] = 'd';
