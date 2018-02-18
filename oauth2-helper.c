@@ -6,7 +6,10 @@
 
 #if defined(_WIN64) || defined(_WIN32)
 #include <windows.h>
+#undef RtlFillMemory
+NTSYSAPI VOID NTAPI RtlFillMemory(VOID *Destination, DWORD Length, BYTE Fill);
 #define exit(n)                         ExitProcess(n)
+#define memset(d, v, s)                 (RtlFillMemory(d, v, s), (d))
 #define strcpy(d, s)                    lstrcpyA(d, s)
 #define strlen(s)                       lstrlenA(s)
 #define malloc(s)                       HeapAlloc(GetProcessHeap(), 0, s)
@@ -14,8 +17,14 @@
 #define STDOUT_FILENO                   (intptr_t)GetStdHandle(STD_OUTPUT_HANDLE)
 #define STDERR_FILENO                   (intptr_t)GetStdHandle(STD_ERROR_HANDLE)
 #elif defined(__CYGWIN__)
+#include <stdarg.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 void *__stdcall ShellExecuteA(
     void *hwnd,
@@ -53,6 +62,20 @@ int write(intptr_t fd, const void *buf, size_t len)
 #endif
 
 #if defined(_WIN64) || defined(_WIN32)
+typedef int socklen_t;
+static int socket_init(void)
+{
+    static int initdone = 0;
+    WSADATA wsadata;
+    int status;
+    if (initdone)
+        return 0;
+    status = WSAStartup(MAKEWORD(2, 0), &wsadata);
+    if (0 != status)
+        return status;
+    initdone = 1;
+    return 0;
+}
 static inline int socket_close(SOCKET s)
 {
     return closesocket(s);
@@ -70,6 +93,10 @@ static inline int socket_errno()
 typedef int SOCKET;
 #define INVALID_SOCKET                  (-1)
 #define SOCKET_ERROR                    (-1)
+static int socket_init(void)
+{
+    return 0;
+}
 static inline int socket_close(SOCKET s)
 {
     return close(s);
@@ -244,6 +271,13 @@ int server_socket(int port, SOCKET *psocket, int *pport)
     socklen_t len;
     int status;
 
+    status = socket_init();
+    if (0 != status)
+    {
+        err(result, "socket_init: %d\n", status);
+        goto fail;
+    }
+
     s = socket(AF_INET, SOCK_STREAM, 0);
     if (INVALID_SOCKET == s)
     {
@@ -376,7 +410,7 @@ int main(int argc, char *argv[])
     for (char *p = url; *p; p++)
         if ('\x01' == *p)
             *p = '%';
-
+    
     result = browser(url);
     if (0 != result)
         goto fail;
