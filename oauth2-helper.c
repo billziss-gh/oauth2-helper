@@ -44,11 +44,11 @@ unsigned long __stdcall GetLastError(void);
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <spawn.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <spawn.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -84,11 +84,6 @@ static inline int socket_close(SOCKET s)
 {
     return closesocket(s);
 }
-static inline int socket_nonblock(SOCKET s)
-{
-    u_long arg = 1;
-    return ioctlsocket(s, FIONBIO, &arg);
-}
 static inline int socket_errno()
 {
     return WSAGetLastError();
@@ -104,11 +99,6 @@ static int socket_init(void)
 static inline int socket_close(SOCKET s)
 {
     return close(s);
-}
-static inline int socket_nonblock(SOCKET s)
-{
-    int flags = fcntl(s, F_GETFL);
-    return fcntl(s, F_SETFL, flags | O_NONBLOCK);
 }
 static inline int socket_errno()
 {
@@ -267,7 +257,7 @@ exit:
     return result;
 }
 
-int server_socket(int port, SOCKET *psocket, int *pport)
+int server_socket(unsigned port, unsigned *pport, SOCKET *psocket)
 {
     int result = E_SERVER;
     SOCKET s = INVALID_SOCKET;
@@ -286,13 +276,6 @@ int server_socket(int port, SOCKET *psocket, int *pport)
     if (INVALID_SOCKET == s)
     {
         err(result, "socket: %d\n", socket_errno());
-        goto fail;
-    }
-
-    status = socket_nonblock(s);
-    if (SOCKET_ERROR == status)
-    {
-        err(result, "socket_nonblock: %d\n", socket_errno());
         goto fail;
     }
 
@@ -338,6 +321,48 @@ fail:
     return result;
 }
 
+int server(SOCKET s, unsigned timeout)
+{
+    int result;
+    SOCKET a = INVALID_SOCKET;
+    struct timeval tv;
+    fd_set fds;
+    int status;
+
+    tv.tv_sec = timeout ? timeout : 120;
+    tv.tv_usec = 0;
+    FD_ZERO(&fds);
+    FD_SET(s, &fds);
+    status = select(1, &fds, 0, 0, &tv);
+    if (SOCKET_ERROR == status)
+    {
+        err(result = E_SERVER, "select: %d\n", socket_errno());
+        goto exit;
+    }
+    else if (0 == status)
+    {
+        err(result = E_TIMEOUT, "select\n");
+        goto exit;
+    }
+
+    a = accept(s, 0, 0);
+    if (INVALID_SOCKET == a)
+    {
+        err(result = E_NETWORK, "accept: %d\n", socket_errno());
+        goto exit;
+    }
+
+    /* read/write */
+
+    result = 0;
+
+exit:
+    if (INVALID_SOCKET != a)
+        socket_close(a);
+
+    return result;
+}
+
 static unsigned strtouint(const char *p)
 {
     unsigned v;
@@ -365,8 +390,8 @@ void usage(void)
 int main(int argc, char *argv[])
 {
     char *urlarg, url[1024];
+    unsigned port = 0, timeout = 0;
     int argi;
-    int port = 0;
     SOCKET s;
     int result;
 
@@ -378,6 +403,9 @@ int main(int argc, char *argv[])
         {
         case 'p':
             port = strtouint(argv[argi] + 2);
+            break;
+        case 't':
+            timeout = strtouint(argv[argi] + 2);
             break;
         default:
             usage();
@@ -392,7 +420,7 @@ int main(int argc, char *argv[])
         (':' == urlarg[4] || ('s' == urlarg[4] && ':' == urlarg[5]))))
         usage();
 
-    result = server_socket(port, &s, &port);
+    result = server_socket(port, &port, &s);
     if (0 != result)
         goto fail;
 
@@ -419,7 +447,11 @@ int main(int argc, char *argv[])
     if (0 != result)
         goto fail;
 
-    write_result(result);
+    result = server(s, timeout);
+    if (0 != result)
+        goto fail;
+
+    socket_close(s);
 
     return 0;
 
