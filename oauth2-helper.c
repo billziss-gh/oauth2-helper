@@ -13,6 +13,7 @@ NTSYSAPI VOID NTAPI RtlFillMemory(VOID *Destination, DWORD Length, BYTE Fill);
 #define strcpy(d, s)                    lstrcpyA(d, s)
 #define strlen(s)                       lstrlenA(s)
 #define malloc(s)                       HeapAlloc(GetProcessHeap(), 0, s)
+#define realloc(p, s)                   HeapReAlloc(GetProcessHeap(), 0, p, s)
 #define free(p)                         ((p) ? (void)HeapFree(GetProcessHeap(), 0, p) : (void)0)
 #define STDOUT_FILENO                   (intptr_t)GetStdHandle(STD_OUTPUT_HANDLE)
 #define STDERR_FILENO                   (intptr_t)GetStdHandle(STD_ERROR_HANDLE)
@@ -58,10 +59,43 @@ extern char **environ;
 #endif
 
 #if defined(_WIN64) || defined(_WIN32)
-int write(intptr_t fd, const void *buf, size_t len)
+static inline intptr_t open(const char *path, int oflag)
+{
+    static DWORD da[] = { GENERIC_READ, GENERIC_WRITE, GENERIC_READ | GENERIC_WRITE, 0 };
+    static DWORD cd[] = { OPEN_EXISTING, OPEN_ALWAYS, TRUNCATE_EXISTING, CREATE_ALWAYS };
+    DWORD DesiredAccess = 0 == (oflag & _O_APPEND) ?
+        da[oflag & (_O_RDONLY | _O_WRONLY | _O_RDWR)] :
+        (da[oflag & (_O_RDONLY | _O_WRONLY | _O_RDWR)] & ~FILE_WRITE_DATA) | FILE_APPEND_DATA;
+    DWORD CreationDisposition = (_O_CREAT | _O_EXCL) == (oflag & (_O_CREAT | _O_EXCL)) ?
+        CREATE_NEW :
+        cd[(oflag & (_O_CREAT | _O_TRUNC)) >> 8];
+    HANDLE h = CreateFileA(path,
+        DesiredAccess, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0,
+        CreationDisposition, FILE_ATTRIBUTE_NORMAL, 0);
+    return INVALID_HANDLE_VALUE != h ? (intptr_t)h : -1;
+}
+static inline int close(intptr_t fd)
+{
+    return CloseHandle((HANDLE)fd) ? 0 : -1;
+}
+static inline int read(intptr_t fd, void *buf, size_t len)
+{
+    DWORD BytesTransferred;
+    return ReadFile((HANDLE)fd, buf, len, &BytesTransferred, 0) ? BytesTransferred : -1;
+}
+static inline int write(intptr_t fd, const void *buf, size_t len)
 {
     DWORD BytesTransferred;
     return WriteFile((HANDLE)fd, buf, len, &BytesTransferred, 0) ? BytesTransferred : -1;
+}
+static inline int file_errno()
+{
+    return GetLastError();
+}
+#else
+static inline int file_errno()
+{
+    return errno;
 }
 #endif
 
@@ -108,13 +142,14 @@ static inline int socket_errno()
 
 enum
 {
+    E_FILE                              = 'F',
     E_BROWSER                           = 'B',
     E_SERVER                            = 'S',
     E_NETWORK                           = 'N',
     E_TIMEOUT                           = 'T',
 };
 
-#define rsp200\
+#define RSP200\
     "HTTP/1.1 200 OK\r\n"\
     "Content-type: text/html\r\n"\
     "\r\n"\
@@ -123,7 +158,7 @@ enum
     "<h1>You are authorized</h1>"\
     "</body>"\
     "</html>"
-#define rsp404\
+#define RSP404\
     "HTTP/1.1 404 Not Found\r\n"\
     "Content-type: text/html\r\n"\
     "\r\n"\
@@ -160,6 +195,9 @@ void err(int result, const char *fmt, ...)
 
     switch (result)
     {
+    case E_FILE:
+        strcpy(buf, "E_FILE: ");
+        break;
     case E_BROWSER:
         strcpy(buf, "E_BROWSER: ");
         break;
@@ -187,6 +225,57 @@ void err(int result, const char *fmt, ...)
     va_end(ap);
 
     write(STDERR_FILENO, buf, strlen(buf));
+}
+
+int load_file(const char *path, char **pp)
+{
+    int result = E_FILE;
+    char *p = 0, *q;
+    size_t n = 64 * 1024;
+    int fd = -1;
+
+    *pp = 0;
+
+    p = malloc(n);
+    if (0 == p)
+    {
+        err(result, "malloc\n");
+        goto exit;
+    }
+
+    fd = open(path, O_RDONLY);
+    if (-1 == fd)
+    {
+        err(result, "open: %d\n", file_errno());
+        goto exit;
+    }
+
+    n = read(fd, p, n - 1);
+    if (-1 == n)
+    {
+        err(result, "read: %d\n", file_errno());
+        goto exit;
+    }
+    p[n++] = '\0';
+
+    q = realloc(p, n);
+    if (0 == q)
+    {
+        err(result, "realloc\n");
+        goto exit;
+    }
+
+    *pp = q;
+    result = 0;
+
+exit:
+    if (-1 != fd)
+        close(fd);
+
+    if (0 != result)
+        free(p);
+
+    return result;
 }
 
 int browser(const char *url)
@@ -340,7 +429,7 @@ fail:
     return result;
 }
 
-int server(SOCKET s, unsigned timeout)
+int server(SOCKET s, unsigned timeout, char *rsp200)
 {
     int result;
     SOCKET a = INVALID_SOCKET;
@@ -388,7 +477,7 @@ int server(SOCKET s, unsigned timeout)
             ;
     }
 
-    rsp = resource ? rsp200 : rsp404;
+    rsp = resource ? (rsp200 ? rsp200 : RSP200) : RSP404;
     send(a, rsp, strlen(rsp), 0);
 
     if (0 == resource)
@@ -438,7 +527,9 @@ int main(int argc, char *argv[])
 {
     char *urlarg, url[1024];
     unsigned port = 0, timeout = 0;
+    const char *rsp200file = 0;
     int argi;
+    char *rsp200 = 0;
     SOCKET s;
     int result;
 
@@ -454,6 +545,9 @@ int main(int argc, char *argv[])
         case 't':
             timeout = strtouint(argv[argi] + 2);
             break;
+        case 'F':
+            rsp200file = argv[argi] + 2;
+            break;
         default:
             usage();
             break;
@@ -466,6 +560,13 @@ int main(int argc, char *argv[])
     if (!('h' == urlarg[0] && 't' == urlarg[1] && 't' == urlarg[2] && 'p' == urlarg[3] &&
         (':' == urlarg[4] || ('s' == urlarg[4] && ':' == urlarg[5]))))
         usage();
+
+    if (0 != rsp200file)
+    {
+        result = load_file(rsp200file, &rsp200);
+        if (0 != result)
+            goto fail;
+    }
 
     result = server_socket(port, &port, &s);
     if (0 != result)
@@ -494,11 +595,12 @@ int main(int argc, char *argv[])
     if (0 != result)
         goto fail;
 
-    result = server(s, timeout);
+    result = server(s, timeout, rsp200);
     if (0 != result)
         goto fail;
 
     socket_close(s);
+    free(rsp200);
 
     return 0;
 
