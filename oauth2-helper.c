@@ -17,10 +17,10 @@ NTSYSAPI VOID NTAPI RtlFillMemory(VOID *Destination, DWORD Length, BYTE Fill);
 #define STDOUT_FILENO                   (intptr_t)GetStdHandle(STD_OUTPUT_HANDLE)
 #define STDERR_FILENO                   (intptr_t)GetStdHandle(STD_ERROR_HANDLE)
 #elif defined(__CYGWIN__)
-#include <stdarg.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,9 +43,13 @@ unsigned long __stdcall GetLastError(void);
 #elif defined(__linux__)
 #include <errno.h>
 #include <fcntl.h>
+#include <netinet/in.h>
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <spawn.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 extern char **environ;
