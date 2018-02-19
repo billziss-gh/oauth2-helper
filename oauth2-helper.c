@@ -4,19 +4,23 @@
  * @copyright 2018 Bill Zissimopoulos
  */
 
+/*
+ * general definitions
+ */
 #if defined(_WIN64) || defined(_WIN32)
 #include <windows.h>
 #undef RtlFillMemory
 NTSYSAPI VOID NTAPI RtlFillMemory(VOID *Destination, DWORD Length, BYTE Fill);
-#define exit(n)                         ExitProcess(n)
 #define memset(d, v, s)                 (RtlFillMemory(d, v, s), (d))
 #define strcpy(d, s)                    lstrcpyA(d, s)
 #define strlen(s)                       lstrlenA(s)
 #define malloc(s)                       HeapAlloc(GetProcessHeap(), 0, s)
 #define realloc(p, s)                   HeapReAlloc(GetProcessHeap(), 0, p, s)
 #define free(p)                         ((p) ? (void)HeapFree(GetProcessHeap(), 0, p) : (void)0)
+#define exit(n)                         ExitProcess(n)
 #define STDOUT_FILENO                   (intptr_t)GetStdHandle(STD_OUTPUT_HANDLE)
 #define STDERR_FILENO                   (intptr_t)GetStdHandle(STD_ERROR_HANDLE)
+
 #elif defined(__CYGWIN__)
 #include <errno.h>
 #include <fcntl.h>
@@ -36,11 +40,13 @@ void *__stdcall ShellExecuteA(
     int nShowCmd);
 unsigned long __stdcall GetLastError(void);
 #define SW_SHOWNORMAL                   1
+
 #elif defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+
 #elif defined(__linux__)
 #include <errno.h>
 #include <fcntl.h>
@@ -54,10 +60,14 @@ unsigned long __stdcall GetLastError(void);
 #include <sys/wait.h>
 #include <unistd.h>
 extern char **environ;
+
 #else
 #error Unknown platform
 #endif
 
+/*
+ * file I/O
+ */
 #if defined(_WIN64) || defined(_WIN32)
 #define O_RDONLY                        0x0000
 #define O_WRONLY                        0x0001
@@ -99,13 +109,17 @@ static inline int file_errno()
 {
     return GetLastError();
 }
-#else
+
+#else /* POSIX */
 static inline int file_errno()
 {
     return errno;
 }
 #endif
 
+/*
+ * sockets
+ */
 #if defined(_WIN64) || defined(_WIN32)
 typedef int socklen_t;
 static int socket_init(void)
@@ -129,6 +143,7 @@ static inline int socket_errno()
 {
     return WSAGetLastError();
 }
+
 #else
 typedef int SOCKET;
 #define INVALID_SOCKET                  (-1)
@@ -174,24 +189,6 @@ enum
     "<h1>404 Not Found</h1>"\
     "</body>"\
     "</html>"
-
-void write_result(int result)
-{
-    char buf[3];
-
-    if (0 == result)
-    {
-        buf[0] = '+';
-        write(STDOUT_FILENO, buf, 1);
-    }
-    else
-    {
-        buf[0] = '-';
-        buf[1] = result;
-        buf[2] = '\n';
-        write(STDOUT_FILENO, buf, 3);
-    }
-}
 
 void err(int result, const char *fmt, ...)
 {
@@ -287,6 +284,7 @@ exit:
 int browser(const char *url)
 {
     int result = E_BROWSER;
+
 #if defined(_WIN64) || defined(_WIN32) || defined(__CYGWIN__)
     if (!ShellExecuteA(0, "open", url, 0, 0, SW_SHOWNORMAL))
     {
@@ -295,6 +293,7 @@ int browser(const char *url)
     }
     result = 0;
 exit:
+
 #elif defined(__APPLE__)
     CFStringRef urlstr = 0;
     CFURLRef urlref = 0;
@@ -323,6 +322,7 @@ exit:
         CFRelease(urlref);
     if (0 != urlstr)
         CFRelease(urlstr);
+
 #elif defined(__linux__)
 	char *argv[] =
 	{
@@ -368,6 +368,7 @@ exit:
     if (0 != file_actions)
         posix_spawn_file_actions_destroy(file_actions);
 #endif
+
     return result;
 }
 
@@ -422,16 +423,16 @@ int server_socket(unsigned port, unsigned *pport, SOCKET *psocket)
 
     result = 0;
 
-    *psocket = s;
     *pport = ntohs(addr.sin_port);
+    *psocket = s;
     return result;
 
 fail:
     if (INVALID_SOCKET != s)
         socket_close(s);
 
-    *psocket = INVALID_SOCKET;
     *pport = 0;
+    *psocket = INVALID_SOCKET;
     return result;
 }
 
@@ -478,9 +479,11 @@ int server(SOCKET s, unsigned timeout, char *rsp200)
 
     if ('G' == req[0] && 'E' == req[1] && 'T' == req[2] && req[3] == ' ')
     {
-        resource = req + 4;
-        for (p = resource; *p && ' ' != *p && '\r' != *p && '\n' != *p; p++)
+        resource = req + 3;
+        *resource = '+';
+        for (p = resource + 1; *p && ' ' != *p && '\r' != *p && '\n' != *p; p++)
             ;
+        *p++ = '\n';
     }
 
     rsp = resource ? (rsp200 ? rsp200 : RSP200) : RSP404;
@@ -492,9 +495,7 @@ int server(SOCKET s, unsigned timeout, char *rsp200)
         goto exit;
     }
 
-    write_result(0);
     write(STDOUT_FILENO, resource, p - resource);
-    write(STDOUT_FILENO, "\n", 1);
 
     result = 0;
 
@@ -611,7 +612,13 @@ int main(int argc, char *argv[])
     return 0;
 
 fail:
-    write_result(result);
+    {
+        char resbuf[3];
+        resbuf[0] = '-';
+        resbuf[1] = result;
+        resbuf[2] = '\n';
+        write(STDOUT_FILENO, resbuf, 3);
+    }
 
     return 1;
 }

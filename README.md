@@ -36,7 +36,7 @@ Options:
 
 - `-pPORT`: Listen on specific `PORT` rather than a random one. Useful for Oauth2 authorization servers that require the `redirect_uri` to match exactly.
 - `-tTIMEOUT`: Specify a `TIMEOUT` to wait for the response (default is 120 seconds).
-- `-FPATH`: Specify a `PATH` for a file the contents of which will be rendered in the browser once the response is received. This file must contain the **full** HTTP response. For example:
+- `-FPATH`: Specify a `PATH` for a file the contents of which will be rendered in the browser once the response is received. This file must contain the **full** HTTP response and newlines should be of the CRLF variety (required by HTTP). For example:
     ```
     HTTP/1.1 200 OK
     Content-type: text/html
@@ -52,7 +52,7 @@ Oauth2-helper uses the standard output to report results. A success report has t
 +RESOURCE-PATH                  # redirect_uri PATH
 ```
 
-An error report has the format below. The error code `C` can be `F` for a file error, `B` for a browser error, `S` for a server (listening) error, `N` for a network error and `T` for a timeout.
+An error report has the format below. The error code `C` can be `F` for a file error, `B` for a browser error, `S` for a socket (listening) error, `N` for a network error and `T` for a timeout.
 
 ```
 -C                              # one of F, B, S, N, T
