@@ -65,13 +65,11 @@ Examples:
 ```
 # open the system browser at https://SERVER/AUTHORIZE and listen on a random port
 $ ./oauth2-helper 'https://SERVER/AUTHORIZE?response_type=code&client_id=CLIENT_ID&scope=SCOPE&redirect_uri=http://localhost:[]'
-+
-/?code=CODE
++/?code=CODE
 
 # open the system browser at https://SERVER/AUTHORIZE and listen on port 20000
 $ ./oauth2-helper -p20000 'https://SERVER/AUTHORIZE?response_type=code&client_id=CLIENT_ID&scope=SCOPE&redirect_uri=http://localhost:[]'
-+
-/?code=CODE
++/?code=CODE
 ```
 
 ## How to build
