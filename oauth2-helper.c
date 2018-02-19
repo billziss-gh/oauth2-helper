@@ -59,16 +59,23 @@ extern char **environ;
 #endif
 
 #if defined(_WIN64) || defined(_WIN32)
+#define O_RDONLY                        0x0000
+#define O_WRONLY                        0x0001
+#define O_RDWR                          0x0002
+#define O_APPEND                        0x0008
+#define O_CREAT                         0x0100
+#define O_TRUNC                         0x0200
+#define O_EXCL                          0x0400
 static inline intptr_t open(const char *path, int oflag)
 {
     static DWORD da[] = { GENERIC_READ, GENERIC_WRITE, GENERIC_READ | GENERIC_WRITE, 0 };
     static DWORD cd[] = { OPEN_EXISTING, OPEN_ALWAYS, TRUNCATE_EXISTING, CREATE_ALWAYS };
-    DWORD DesiredAccess = 0 == (oflag & _O_APPEND) ?
-        da[oflag & (_O_RDONLY | _O_WRONLY | _O_RDWR)] :
-        (da[oflag & (_O_RDONLY | _O_WRONLY | _O_RDWR)] & ~FILE_WRITE_DATA) | FILE_APPEND_DATA;
-    DWORD CreationDisposition = (_O_CREAT | _O_EXCL) == (oflag & (_O_CREAT | _O_EXCL)) ?
+    DWORD DesiredAccess = 0 == (oflag & O_APPEND) ?
+        da[oflag & (O_RDONLY | O_WRONLY | O_RDWR)] :
+        (da[oflag & (O_RDONLY | O_WRONLY | O_RDWR)] & ~FILE_WRITE_DATA) | FILE_APPEND_DATA;
+    DWORD CreationDisposition = (O_CREAT | O_EXCL) == (oflag & (O_CREAT | O_EXCL)) ?
         CREATE_NEW :
-        cd[(oflag & (_O_CREAT | _O_TRUNC)) >> 8];
+        cd[(oflag & (O_CREAT | O_TRUNC)) >> 8];
     HANDLE h = CreateFileA(path,
         DesiredAccess, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0,
         CreationDisposition, FILE_ATTRIBUTE_NORMAL, 0);
