@@ -49,8 +49,7 @@ Options:
 Oauth2-helper uses the standard output to report results. A success report has the format below. The `RESOURCE-PATH` can be parsed to extract the authorization code from its query string.
 
 ```
-+
-RESOURCE-PATH                   # redirect_uri PATH
++RESOURCE-PATH                  # redirect_uri PATH
 ```
 
 An error report has the format below. The error code `C` can be `F` for a file error, `B` for a browser error, `S` for a server (listening) error, `N` for a network error and `T` for a timeout.

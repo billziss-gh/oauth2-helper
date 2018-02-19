@@ -182,8 +182,7 @@ void write_result(int result)
     if (0 == result)
     {
         buf[0] = '+';
-        buf[1] = '\n';
-        write(STDOUT_FILENO, buf, 2);
+        write(STDOUT_FILENO, buf, 1);
     }
     else
     {
