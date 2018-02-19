@@ -525,7 +525,7 @@ static unsigned strtouint(const char *p)
 
 void usage(void)
 {
-    char usage[] = "usage: oauth2-helper [-pPORT] URL\n";
+    char usage[] = "usage: oauth2-helper [-pPORT][-tTIMEOUT][-FPATH] URL\n";
     write(STDERR_FILENO, usage, strlen(usage));
     exit(2);
 }
