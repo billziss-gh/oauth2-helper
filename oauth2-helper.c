@@ -324,15 +324,15 @@ exit:
         CFRelease(urlstr);
 
 #elif defined(__linux__)
-	char *argv[] =
-	{
-		"xdg-open",
+    char *argv[] =
+    {
+        "xdg-open",
         (char *)url,
-		0,
-	};
+        0,
+    };
     posix_spawn_file_actions_t file_actions_stg, *file_actions = 0;
-	pid_t pid;
-	int status;
+    pid_t pid;
+    int status;
     status = posix_spawn_file_actions_init(&file_actions_stg);
     if (0 != status)
     {
