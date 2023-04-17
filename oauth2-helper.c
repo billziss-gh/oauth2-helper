@@ -20,6 +20,10 @@ NTSYSAPI VOID NTAPI RtlFillMemory(VOID *Destination, DWORD Length, BYTE Fill);
 #define exit(n)                         ExitProcess(n)
 #define STDOUT_FILENO                   (intptr_t)GetStdHandle(STD_OUTPUT_HANDLE)
 #define STDERR_FILENO                   (intptr_t)GetStdHandle(STD_ERROR_HANDLE)
+#if !defined(__cplusplus) && defined(_MSC_VER) && _MSC_VER < 1900
+#  define inline __inline
+#endif
+
 
 #elif defined(__CYGWIN__)
 #include <errno.h>
@@ -535,6 +539,7 @@ int main(int argc, char *argv[])
     char *urlarg, url[1024];
     unsigned port = 0, timeout = 0;
     const char *rsp200file = 0;
+    char *p = 0;
     int argi;
     char *rsp200 = 0;
     SOCKET s;
@@ -579,7 +584,7 @@ int main(int argc, char *argv[])
     if (0 != result)
         goto fail;
 
-    for (char *p = urlarg; *p; p++)
+    for (p = urlarg; *p; p++)
         if ('%' == *p)
             *p = '\x01';
         else if ('[' == p[0] && ']' == p[1])
@@ -594,7 +599,7 @@ int main(int argc, char *argv[])
     snprintf(url, sizeof url, urlarg, port);
 #endif
 
-    for (char *p = url; *p; p++)
+    for (p = url; *p; p++)
         if ('\x01' == *p)
             *p = '%';
     
@@ -627,6 +632,7 @@ fail:
 void mainCRTStartup(void)
 {
     DWORD Argc;
+    DWORD I = 0;
     PWSTR *Argv;
     int Length;
     char **argv, *argp, *argendp;
@@ -636,12 +642,12 @@ void mainCRTStartup(void)
         ExitProcess(GetLastError());
     
     Length = 0;
-    for (DWORD I = 0; Argc > I; I++)
+    for (I = 0; Argc > I; I++)
         Length += WideCharToMultiByte(CP_UTF8, 0, Argv[I], -1, 0, 0, 0, 0);
     argv = malloc((Argc + 1) * sizeof(char *) + Length);
     argp = (char *)argv + (Argc + 1) * sizeof(char *);
     argendp = argp + Length;
-    for (DWORD I = 0; Argc > I; I++)
+    for (I = 0; Argc > I; I++)
     {
         argv[I] = argp;
         argp += WideCharToMultiByte(CP_UTF8, 0, Argv[I], -1, argp, argendp - argp, 0, 0);
